@@ -1,0 +1,43 @@
+---
+# Load Generator CronJob - generates continuous traffic to deplete stock
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backend-load-generator
+  namespace: web-shop
+spec:
+  # Run every minute to quickly deplete stock and trigger out_of_stock metrics
+  schedule: "* * * * *"
+  concurrencyPolicy: Allow
+  failedJobsHistoryLimit: 1
+  successfulJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: default
+          restartPolicy: OnFailure
+          containers:
+            - name: loader
+              image: curlimages/curl:latest
+              imagePullPolicy: Always
+              command:
+                - sh
+                - -c
+                - |
+                  # Generate SELECT queries (inventory checks)
+                  items="laptop phone tablet headphones keyboard monitor mouse"
+                  for item in $items; do
+                    curl -s "http://backend:5001/inventory?item=$item" > /dev/null
+                  done
+
+                  # Generate INSERT queries (order processing) - 5 random orders × 2 units = 10 units/min
+                  for i in {1..5}; do
+                    # Pick random item from list
+                    item=$(echo $items | tr ' ' '\n' | shuf -n 1)
+                    curl -s -X POST "http://backend:5001/process-order" \
+                      -H "Content-Type: application/json" \
+                      -d "{\"item\": \"$item\", \"user\": \"load-test\", \"quantity\": 2}" > /dev/null
+                  done
+
+                  echo "Load test completed - 7 inventory checks + 5 random orders (2 units each = 10 units/min)"

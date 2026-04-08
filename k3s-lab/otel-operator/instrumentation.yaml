@@ -1,0 +1,39 @@
+---
+# Auto-Instrumentation for Python/Flask applications
+apiVersion: opentelemetry.io/v1alpha1
+kind: Instrumentation
+metadata:
+  name: python-auto-instrument
+  namespace: otel-collectors
+spec:
+  propagators:
+    - tracecontext
+    - baggage
+    - b3
+
+  sampler:
+    type: parentbased_always_on
+
+  python:
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:0.47b0
+    env:
+      # Python OTel SDK configuration
+      - name: OTEL_TRACES_EXPORTER
+        value: otlp
+      - name: OTEL_EXPORTER_OTLP_PROTOCOL
+        value: grpc
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: http://gateway-collector.otel-collectors.svc.cluster.local:4317
+      - name: OTEL_METRICS_EXPORTER
+        value: none
+      - name: OTEL_LOGS_EXPORTER
+        value: none
+      - name: OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED
+        value: "false"
+      - name: OTEL_INSTRUMENTATION_REQUESTS_ENABLED
+        value: "true"
+      - name: OTEL_INSTRUMENTATION_URLLIB_ENABLED
+        value: "true"
+      - name: OTEL_INSTRUMENTATION_PSYCOPG2_ENABLED
+        value: "true"
+

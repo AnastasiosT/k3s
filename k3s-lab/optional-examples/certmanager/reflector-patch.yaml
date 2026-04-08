@@ -1,0 +1,14 @@
+---
+# Patch the wildcard TLS secret to enable reflector auto-sync
+# Reflector will copy the secret into all listed namespaces automatically
+# Apply with: kubectl apply -f reflector-patch.yaml
+# To add more namespaces, update reflection-auto-namespaces and re-apply
+apiVersion: v1
+kind: Secret
+metadata:
+  name: wildcard-local-tls-secret
+  namespace: cert-manager
+  annotations:
+    reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+    reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+    reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: "checkmk,netapp-mock,kube-system"

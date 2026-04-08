@@ -1,0 +1,56 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cmdb-init-devices
+  namespace: cmdb
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: init
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "[*] Waiting for CMDB to be ready..."
+              for i in $(seq 1 30); do
+                if curl -sf http://cmdb/api/health > /dev/null 2>&1; then
+                  echo "[✓] CMDB is ready"
+                  break
+                fi
+                echo "  Attempt $i/30..."
+                sleep 2
+              done
+
+              echo "[*] Adding test devices..."
+
+              devices='
+              {"hostname":"web-prod-01","ip":"192.168.1.10","device_type":"Server","location":"DC1"}
+              {"hostname":"web-prod-02","ip":"192.168.1.11","device_type":"Server","location":"DC1"}
+              {"hostname":"db-prod-01","ip":"192.168.1.20","device_type":"Server","location":"DC1"}
+              {"hostname":"db-prod-02","ip":"192.168.1.21","device_type":"Server","location":"DC1"}
+              {"hostname":"app-prod-01","ip":"192.168.1.30","device_type":"Server","location":"DC1"}
+              {"hostname":"app-prod-02","ip":"192.168.1.31","device_type":"Server","location":"DC1"}
+              '
+
+              echo "$devices" | while read line; do
+                [ -z "$line" ] && continue
+                echo "  Adding: $(echo $line | grep -o '"hostname":"[^"]*' | cut -d'"' -f4)..."
+                curl -s -X POST http://cmdb/api/devices \
+                  -H "Content-Type: application/json" \
+                  -d "$line" || echo "    (might already exist)"
+              done
+
+              echo "[✓] Devices added"
+              curl -s http://cmdb/api/devices | head -50
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"

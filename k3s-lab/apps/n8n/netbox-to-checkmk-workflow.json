@@ -1,0 +1,187 @@
+{
+  "id": "netbox-to-checkmk",
+  "name": "Netbox to Checkmk Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://netbox/api/dcim/devices/",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "get-netbox-devices",
+      "name": "Get Devices from Netbox",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const devices = $input.item.json.results || [];\nreturn devices.map(device => ({\n  json: {\n    hostname: device.name,\n    ip_address: device.primary_ip4 ? device.primary_ip4.address.split('/')[0] : null,\n    device_type: device.device_type?.model || 'Unknown',\n    location: device.site?.name || 'Unknown'\n  }\n}));"
+      },
+      "id": "transform-devices",
+      "name": "Transform Devices",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://checkmk.k3s.local/v250/check_mk/api/1.0/domain-types/host/collections/all",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "get-checkmk-hosts",
+      "name": "Get Hosts from Checkmk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const checkmkResponse = $input.item.json;\nconst checkmkHosts = checkmkResponse.value || [];\nconst checkmkHostnames = checkmkHosts.map(h => h.id);\n\nconst transformNode = $('Transform Devices');\nconst netboxDevices = transformNode.all();\n\nconst newHosts = [];\nfor (const item of netboxDevices) {\n  const hostname = item.json.hostname;\n  if (hostname && !checkmkHostnames.includes(hostname)) {\n    newHosts.push({ json: item.json });\n  }\n}\n\nif (newHosts.length === 0) {\n  console.log('No new hosts to add');\n  return [];\n}\n\nconsole.log(`Found ${newHosts.length} new hosts`);\nreturn newHosts;"
+      },
+      "id": "find-missing-hosts",
+      "name": "Find Missing Hosts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://checkmk.k3s.local/v250/check_mk/api/1.0/domain-types/host_config/collections/all",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { host_name: $json.hostname, folder: '/', attributes: { ipaddress: $json.ip_address, alias: $json.hostname, site: 'iframe' } } }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "create-host",
+      "name": "Create Host in Checkmk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://checkmk.k3s.local/v250/check_mk/api/1.0/domain-types/activation_run/actions/activate-changes/invoke",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "If-Match",
+              "value": "*"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { sites: ['iframe'], force_foreign_changes: true } }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "activate-changes",
+      "name": "Activate Changes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1560, 300],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Every Hour": {
+      "main": [
+        [
+          {
+            "node": "Get Devices from Netbox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Devices from Netbox": {
+      "main": [
+        [
+          {
+            "node": "Transform Devices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Devices": {
+      "main": [
+        [
+          {
+            "node": "Get Hosts from Checkmk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Hosts from Checkmk": {
+      "main": [
+        [
+          {
+            "node": "Find Missing Hosts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Missing Hosts": {
+      "main": [
+        [
+          {
+            "node": "Create Host in Checkmk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Host in Checkmk": {
+      "main": [
+        [
+          {
+            "node": "Activate Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

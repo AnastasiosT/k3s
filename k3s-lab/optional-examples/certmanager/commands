@@ -1,0 +1,124 @@
+vagrant@checkmk-k3s:~$ mkdir -p ~/k3s/cert-manager
+vagrant@checkmk-k3s:~$ ls
+apps_info.sh  ca.crt  checkmk_info.sh  demo_stack_info.sh  k3s  token.txt  values.original.yaml  values.yaml
+vagrant@checkmk-k3s:~$ cd k3s/cert-manager/
+vagrant@checkmk-k3s:~/k3s/cert-manager$ helm repo add jetstack https://charts.jetstack.io
+"jetstack" has been added to your repositories
+vagrant@checkmk-k3s:~/k3s/cert-manager$ helm repo update
+Hang tight while we grab the latest from your chart repositories...
+...Successfully got an update from the "jetstack" chart repository
+Update Complete. ⎈Happy Helming!⎈
+vagrant@checkmk-k3s:~/k3s/cert-manager$ helm install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace --set crds.enabled=true
+NAME: cert-manager
+LAST DEPLOYED: Sun Mar 29 17:52:44 2026
+NAMESPACE: cert-manager
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+NOTES:
+cert-manager v1.20.1 has been deployed successfully!
+
+In order to begin issuing certificates, you will need to set up a ClusterIssuer
+or Issuer resource (for example, by creating a 'letsencrypt-staging' issuer).
+
+More information on the different types of issuers and how to configure them
+can be found in our documentation:
+
+https://cert-manager.io/docs/configuration/
+
+For information on how to configure cert-manager to automatically provision
+Certificates for Ingress resources, take a look at the `ingress-shim`
+documentation:
+
+https://cert-manager.io/docs/usage/ingress/
+
+For information on how to configure cert-manager to automatically provision
+Certificates for Gateway API resources, take a look at the `gateway resource`
+documentation:
+
+https://cert-manager.io/docs/usage/gateway/
+vagrant@checkmk-k3s:~/k3s/cert-manager$ kubectl get pods -n cert-manager
+NAME                                       READY   STATUS    RESTARTS   AGE
+cert-manager-5f885f9c55-64kqr              1/1     Running   0          50s
+cert-manager-cainjector-7f45ffb9d5-w54w6   1/1     Running   0          50s
+cert-manager-webhook-7944648944-n4gw5      1/1     Running   0          50s
+
+
+vagrant@checkmk-k3s:~/k3s/cert-manager$ kubectl apply -f selfsigned-issuer.yaml
+clusterissuer.cert-manager.io/selfsigned-issuer created
+
+
+vagrant@checkmk-k3s:~/k3s/cert-manager$ vi root-ca.yaml
+vagrant@checkmk-k3s:~/k3s/cert-manager$ ls
+root-ca.yaml  selfsigned-issuer.yaml
+vagrant@checkmk-k3s:~/k3s/cert-manager$ kubectl apply -f root-ca.yaml 
+certificate.cert-manager.io/root-ca created
+
+
+vagrant@checkmk-k3s:~/k3s/cert-manager$ kubectl apply -f root-ca-issuer.yaml 
+clusterissuer.cert-manager.io/root-ca-issuer created
+
+vagrant@checkmk-k3s:~/k3s/cert-manager$ vi  intermediate-ca.yaml
+vagrant@checkmk-k3s:~/k3s/cert-manager$ kubectl apply -f intermediate-ca.yaml 
+certificate.cert-manager.io/intermediate-ca created
+
+
+vagrant@checkmk-k3s:~/k3s/cert-manager$ kubectl apply -f intermediate-ca-issuer.yaml 
+clusterissuer.cert-manager.io/intermediate-ca-issuer created
+
+vagrant@checkmk-k3s:~/k3s/cert-manager$ kubectl apply -f wildcard-cert.yaml 
+certificate.cert-manager.io/wildcard-local created
+
+
+kubectl get clusterissuers
+kubectl get certificates -n cert-manager
+
+
+
+
+Export commands:
+Root CA cert (install this in Checkmk):
+bashkubectl get secret root-ca-secret -n cert-manager \
+  -o jsonpath='{.data.tls\.crt}' | base64 -d > thanos-k3s-root-ca.crt
+Intermediate CA cert:
+bashkubectl get secret intermediate-ca-secret -n cert-manager \
+  -o jsonpath='{.data.tls\.crt}' | base64 -d > thanos-k3s-intermediate-ca.crt
+NetApp mock cert:
+bashkubectl get secret netapp-mock-tls-secret -n netapp-mock \
+  -o jsonpath='{.data.tls\.crt}' | base64 -d > netapp-mock.crt
+
+For Checkmk you only need the root CA. Install it once and all mocks are trusted automatically. Want to do that now?
+
+kubectl scale deployment checkmk -n checkmk --replicas=0
+
+
+secret
+
+kubectl create secret generic checkmk-credentials \
+  --from-literal=password=cmk \
+  -n checkmk
+
+
+reflector
+
+helm --kubeconfig=/home/anastasios/.kube/config-k3s repo add emberstack https://emberstack.github.io/helm-charts
+helm --kubeconfig=/home/anastasios/.kube/config-k3s repo update
+helm --kubeconfig=/home/anastasios/.kube/config-k3s upgrade --install reflector emberstack/reflector --namespace kube-system
+
+
+reflection-allowed — this secret is allowed to be copied
+reflection-auto-enabled — do it automatically, don't wait to be asked
+reflection-auto-namespaces — copy it into exactly these namespaces
+
+vagrant@checkmk-k3s:~/k3s/cert-manager$ vi tls-store.yaml
+vagrant@checkmk-k3s:~/k3s/cert-manager$ kubectl --kubeconfig=/home/anastasios/.kube/config-k3s get secret wildcard-local-tls-secret \
+  -n cert-manager -o yaml \
+  | sed 's/namespace: cert-manager/namespace: kube-system/' \
+  | kubectl --kubeconfig=/home/anastasios/.kube/config-k3s apply -f -
+error: stat /home/anastasios/.kube/config-k3s: no such file or directory
+error: stat /home/anastasios/.kube/config-k3s: no such file or directory
+vagrant@checkmk-k3s:~/k3s/cert-manager$ kubectl get secret wildcard-local-tls-secret   -n cert-manager -o yaml   | sed 's/namespace: cert-manager/namespace: kube-system/'   | kubectl --kubeconfig=/home/anastasios/.kube/config-k3s apply -f -
+error: stat /home/anastasios/.kube/config-k3s: no such file or directory
+vagrant@checkmk-k3s:~/k3s/cert-manager$ kubectl get secret wildcard-local-tls-secret   -n cert-manager -o yaml   | sed 's/namespace: cert-manager/namespace: kube-system/'   | kubectl apply -f -
+secret/wildcard-local-tls-secret created
+vagrant@checkmk-k3s:~/k3s/cert-manager$ 

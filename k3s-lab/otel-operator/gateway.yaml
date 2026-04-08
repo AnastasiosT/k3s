@@ -1,0 +1,123 @@
+---
+# Gateway Collector - receives from all other collectors and exports to Checkmk
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: gateway
+  namespace: otel-collectors
+spec:
+  mode: deployment
+  replicas: 1
+  image: otel/opentelemetry-collector-contrib:0.147.0
+
+  resources:
+    limits:
+      memory: 1Gi
+      cpu: 500m
+    requests:
+      memory: 512Mi
+      cpu: 200m
+
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+    processors:
+      memory_limiter:
+        check_interval: 5s
+        limit_mib: 800
+        spike_limit_mib: 200
+
+      batch:
+        timeout: 10s
+        send_batch_size: 2000
+        send_batch_max_size: 4000
+
+      resource:
+        attributes:
+          - key: service.name
+            value: gateway-collector
+            action: insert
+          - key: cluster.name
+            value: k3s
+            action: insert
+
+      attributes:
+        actions:
+          - key: host.name
+            value: k3s-logs
+            action: upsert
+
+    exporters:
+      otlp/checkmk-metrics:
+        endpoint: "192.168.121.1:4317"
+        tls:
+          insecure: true
+        timeout: 30s
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
+
+      otlp/checkmk-traces:
+        endpoint: "192.168.121.1:4417"
+        tls:
+          insecure: true
+        timeout: 30s
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
+
+    service:
+      extensions: [health_check]
+      telemetry:
+        logs:
+          level: warn
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, batch]
+          exporters: [otlp/checkmk-traces]
+
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, batch]
+          exporters: [otlp/checkmk-metrics]
+
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, attributes, resource, batch]
+          exporters: [otlp/checkmk-metrics]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-collector
+  namespace: otel-collectors
+spec:
+  type: ClusterIP
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: opentelemetry-collector
+    app.kubernetes.io/instance: gateway

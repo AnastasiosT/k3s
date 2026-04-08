@@ -1,0 +1,120 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mattermost
+---
+# Central ConfigMap — lives in platform namespace
+# Reflector copies it automatically to namespaces listed below
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: common-config-mattermost
+  namespace: platform
+  annotations:
+    reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+    reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: "mattermost,monitoring,postgres"
+    reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+data:
+  MM_SERVICESETTINGS_SITEURL: "https://mattermost.local"
+  MM_SQLSETTINGS_DRIVERNAME: "postgres"
+  MM_EMAILSETTINGS_SENDEMAILNOTIFICATIONS: "false"
+  MM_EMAILSETTINGS_ENABLESMTPAUTH: "false"
+
+---
+
+# Local Secret — passwords never leave the app namespace
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mattermost-secret
+  namespace: mattermost
+type: Opaque
+stringData:
+  MM_SQLSETTINGS_DATASOURCE: "postgres://mmuser:mmpassword@postgres.mattermost.svc.cluster.local:5432/mattermost?sslmode=disable&connect_timeout=10"
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mattermost
+  namespace: mattermost
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mattermost
+  template:
+    metadata:
+      labels:
+        app: mattermost
+    spec:
+      containers:
+        - name: mattermost
+          image: mattermost/mattermost-team-edition:latest
+          envFrom:
+            - configMapRef:
+                name: common-config-mattermost
+            - secretRef:
+                name: mattermost-secret
+          ports:
+            - containerPort: 8065
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: mattermost
+  namespace: mattermost
+spec:
+  selector:
+    app: mattermost
+  ports:
+    - port: 8065
+      targetPort: 8065
+
+---
+
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-to-https
+  namespace: mattermost
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mattermost
+  namespace: mattermost
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    #traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: mattermost-redirect-to-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - mattermost.local
+      secretName: wildcard-local-tls-secret
+  rules:
+    - host: mattermost.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mattermost
+                port:
+                  number: 8065

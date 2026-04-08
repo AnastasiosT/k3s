@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: web-shop
+data:
+  # PostgreSQL connection config (non-sensitive)
+  DB_HOST: "postgres.postgres.svc.cluster.local"
+  DB_PORT: "5432"
+  DB_NAME: "shop"
+  DB_USER: "postgres"
+  # OTel gateway collector endpoint (in otel-collectors namespace)
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://gateway-collector.otel-collectors.svc.cluster.local:4317"

@@ -1,0 +1,120 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-init-schema
+  namespace: web-shop
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      serviceAccountName: default
+      containers:
+      - name: postgres-init
+        image: postgres:16-alpine
+        env:
+        - name: PGPASSWORD
+          value: "postgres123"
+        command:
+        - /bin/sh
+        - -c
+        - |
+          psql -h postgres.postgres.svc.cluster.local -U postgres -d shop << 'EOSQL'
+          DROP TABLE IF EXISTS inventory_log, order_items, orders, products, customers, categories CASCADE;
+
+          CREATE TABLE categories (
+              id SERIAL PRIMARY KEY,
+              name VARCHAR(100) NOT NULL
+          );
+
+          CREATE TABLE customers (
+              id SERIAL PRIMARY KEY,
+              email VARCHAR(100) UNIQUE,
+              country VARCHAR(50)
+          );
+
+          CREATE TABLE products (
+              id SERIAL PRIMARY KEY,
+              sku VARCHAR(50) UNIQUE,
+              name VARCHAR(100) NOT NULL,
+              category_id INTEGER REFERENCES categories(id),
+              price NUMERIC(10,2),
+              stock_qty INTEGER DEFAULT 20
+          );
+
+          CREATE TABLE orders (
+              id SERIAL PRIMARY KEY,
+              customer_id INTEGER REFERENCES customers(id),
+              status VARCHAR(20),
+              total NUMERIC(10,2),
+              created_at TIMESTAMP DEFAULT NOW(),
+              updated_at TIMESTAMP DEFAULT NOW()
+          );
+
+          CREATE TABLE order_items (
+              id SERIAL PRIMARY KEY,
+              order_id INTEGER REFERENCES orders(id),
+              product_id INTEGER REFERENCES products(id),
+              qty INTEGER,
+              unit_price NUMERIC(10,2)
+          );
+
+          CREATE TABLE inventory_log (
+              id SERIAL PRIMARY KEY,
+              product_id INTEGER REFERENCES products(id),
+              change_qty INTEGER,
+              reason VARCHAR(50),
+              created_at TIMESTAMP DEFAULT NOW()
+          );
+
+          INSERT INTO categories (name) VALUES ('Electronics'), ('Books'), ('Clothing')
+              ;
+
+          INSERT INTO customers (email, country)
+              SELECT 'customer' || i || '@example.com', CASE WHEN i % 3 = 0 THEN 'US' WHEN i % 3 = 1 THEN 'UK' ELSE 'DE' END
+              FROM generate_series(1, 1000) i
+              ;
+
+          -- Create specific products for load testing
+          INSERT INTO products (sku, name, category_id, price, stock_qty) VALUES
+              ('SKU-001', 'laptop', 1, 999.99, 20),
+              ('SKU-002', 'phone', 1, 599.99, 20),
+              ('SKU-003', 'tablet', 1, 399.99, 20),
+              ('SKU-004', 'headphones', 1, 149.99, 20),
+              ('SKU-005', 'keyboard', 1, 99.99, 20),
+              ('SKU-006', 'monitor', 1, 299.99, 20),
+              ('SKU-007', 'mouse', 1, 29.99, 20);
+
+          -- Add more generic products for additional test data
+          INSERT INTO products (sku, name, category_id, price, stock_qty)
+              SELECT 'SKU-' || (100 + i), 'Product ' || (100 + i), (i % 3) + 1, ROUND((10 + RANDOM() * 1000)::NUMERIC, 2), 20
+              FROM generate_series(1, 500) i
+              ;
+
+          -- NOTE: FK constraint on orders.customer_id is disabled for testing
+          -- In production, ensure customers table is properly populated before using orders table
+          ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_customer_id_fkey;
+
+          -- Optimize for observable queries
+          CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
+          CREATE INDEX IF NOT EXISTS idx_products_stock ON products(stock_qty);
+          CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
+          CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+          CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+          CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+          CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON order_items(product_id);
+          CREATE INDEX IF NOT EXISTS idx_inventory_log_product_id ON inventory_log(product_id);
+
+          -- Update table statistics for query planner
+          ANALYZE categories;
+          ANALYZE customers;
+          ANALYZE products;
+          ANALYZE orders;
+          ANALYZE order_items;
+          ANALYZE inventory_log;
+
+          SELECT COUNT(*) AS categories FROM categories;
+          SELECT COUNT(*) AS customers FROM customers;
+          SELECT COUNT(*) AS products FROM products;
+          EOSQL
+      restartPolicy: Never
+  ttlSecondsAfterFinished: 3600

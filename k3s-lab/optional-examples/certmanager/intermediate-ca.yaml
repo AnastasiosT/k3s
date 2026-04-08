@@ -1,0 +1,19 @@
+---
+# Step 4 — Intermediate CA certificate (issued by root CA, 5 year validity)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: intermediate-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: "Thanos K3s Mockup CA - Intermediate"
+  secretName: intermediate-ca-secret
+  duration: 43800h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: root-ca-issuer
+    kind: ClusterIssuer

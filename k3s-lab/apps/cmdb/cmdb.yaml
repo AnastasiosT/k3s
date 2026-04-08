@@ -1,0 +1,108 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cmdb
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cmdb-data
+  namespace: cmdb
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cmdb
+  namespace: cmdb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cmdb
+  template:
+    metadata:
+      labels:
+        app: cmdb
+    spec:
+      containers:
+        - name: cmdb
+          image: 192.168.121.1:5000/cmdb:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: cmdb-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cmdb
+  namespace: cmdb
+spec:
+  selector:
+    app: cmdb
+  ports:
+    - port: 80
+      targetPort: 5000
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cmdb
+  namespace: cmdb
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.middlewares: cmdb-redirect-to-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - cmdb.k3s.local
+      secretName: wildcard-local-tls-secret
+  rules:
+    - host: cmdb.k3s.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cmdb
+                port:
+                  number: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-to-https
+  namespace: cmdb
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true

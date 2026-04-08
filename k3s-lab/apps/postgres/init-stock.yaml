@@ -1,0 +1,36 @@
+---
+# Initialize product stock to 20 units (for faster out_of_stock testing)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-init-stock
+  namespace: postgres
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: init-stock
+          image: postgres:16
+          env:
+            - name: PGHOST
+              value: postgres
+            - name: PGUSER
+              value: postgres
+            - name: PGPASSWORD
+              value: postgres
+            - name: PGDATABASE
+              value: shop
+          command:
+            - sh
+            - -c
+            - |
+              # Wait for postgres to be ready
+              until pg_isready; do sleep 1; done
+
+              # Set initial stock to 20 units for all products
+              psql -c "UPDATE products SET stock_qty = 20;"
+
+              # Verify
+              psql -c "SELECT name, stock_qty FROM products ORDER BY name;"

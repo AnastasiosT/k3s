@@ -1,0 +1,164 @@
+---
+# NetFlow Collector - receives NetFlow/sFlow and converts to metrics
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: netflow
+  namespace: otel-collectors
+spec:
+  mode: daemonset
+  image: otel/opentelemetry-collector-contrib:0.147.0
+
+  resources:
+    limits:
+      memory: 256Mi
+      cpu: 300m
+    requests:
+      memory: 128Mi
+      cpu: 100m
+
+  config:
+    receivers:
+      netflow:
+        scheme: netflow
+        port: 2055
+        sockets: 4
+        workers: 16
+
+      netflow/sflow:
+        scheme: sflow
+        port: 6343
+        sockets: 4
+        workers: 16
+
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 128
+        spike_limit_mib: 32
+
+      batch:
+        timeout: 10s
+        send_batch_size: 500
+        send_batch_max_size: 1000
+
+      resource:
+        attributes:
+          - key: service.name
+            value: netflow-collector
+            action: insert
+
+      transform:
+        metric_statements:
+          - context: resource
+            statements:
+              - set(attributes["host.name"], "netflow_k3s")
+
+    connectors:
+      signal_to_metrics:
+        logs:
+          # TCP SYN+RST — abnormal/attack
+          - name: netflow.tcp.synrst_count
+            description: "Flows with SYN+RST bits set — abnormal, possible attack"
+            conditions:
+              - 'Int(attributes["flow.tcp_flags"]) == 6'
+              - 'Int(attributes["flow.tcp_flags"]) == 7'
+              - 'Int(attributes["flow.tcp_flags"]) == 14'
+              - 'Int(attributes["flow.tcp_flags"]) == 15'
+              - 'Int(attributes["flow.tcp_flags"]) == 22'
+              - 'Int(attributes["flow.tcp_flags"]) == 23'
+              - 'Int(attributes["flow.tcp_flags"]) == 30'
+              - 'Int(attributes["flow.tcp_flags"]) == 31'
+            attributes:
+              - key: source.address
+              - key: destination.address
+              - key: destination.port
+            sum:
+              value: "1"
+
+          # RST — connection rejected
+          - name: netflow.tcp.rst_count
+            description: "Flows with RST bit set — connection rejected/reset"
+            conditions:
+              - 'Int(attributes["flow.tcp_flags"]) == 4'
+              - 'Int(attributes["flow.tcp_flags"]) == 5'
+              - 'Int(attributes["flow.tcp_flags"]) == 12'
+              - 'Int(attributes["flow.tcp_flags"]) == 20'
+              - 'Int(attributes["flow.tcp_flags"]) == 21'
+              - 'Int(attributes["flow.tcp_flags"]) == 28'
+              - 'Int(attributes["flow.tcp_flags"]) == 29'
+            attributes:
+              - key: source.address
+              - key: destination.address
+              - key: destination.port
+            sum:
+              value: "1"
+
+          # SYN — port scan
+          - name: netflow.tcp.syn_count
+            description: "Flows with SYN only — potential port scan"
+            conditions:
+              - 'Int(attributes["flow.tcp_flags"]) == 2'
+            attributes:
+              - key: source.address
+              - key: destination.address
+              - key: destination.port
+            sum:
+              value: "1"
+
+          # TCP Flags — all values captured
+          - name: netflow.tcp.flags
+            description: "TCP flags for each flow"
+            attributes:
+              - key: source.address
+              - key: destination.address
+              - key: destination.port
+              - key: flow.tcp_flags
+            sum:
+              value: "1"
+
+          # Flow count
+          - name: netflow.flow.count
+            description: "Number of network flows observed"
+            attributes:
+              - key: source.address
+              - key: destination.address
+              - key: network.transport
+            sum:
+              value: "1"
+
+    exporters:
+      otlp:
+        endpoint: "gateway-collector.otel-collectors.svc.cluster.local:4317"
+        tls:
+          insecure: true
+        timeout: 30s
+        sending_queue:
+          enabled: true
+          num_consumers: 2
+          queue_size: 512
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
+
+    service:
+      extensions: [health_check]
+      telemetry:
+        logs:
+          level: warn
+      pipelines:
+        logs:
+          receivers: [netflow, netflow/sflow]
+          processors: [memory_limiter, resource, batch]
+          exporters: [signal_to_metrics]
+
+        metrics:
+          receivers: [signal_to_metrics]
+          processors: [transform, batch]
+          exporters: [otlp]

@@ -1,0 +1,678 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: n8n-workflows
+  namespace: n8n
+data:
+  example-workflow.json: |
+    {
+      "name": "Checkmk Example Workflow",
+      "nodes": [
+        {
+          "parameters": {},
+          "id": "start-node",
+          "name": "When clicking \"Execute Workflow\"",
+          "type": "n8n-nodes-base.manualTrigger",
+          "typeVersion": 1,
+          "position": [
+            240,
+            300
+          ]
+        },
+        {
+          "parameters": {
+            "resource": "host",
+            "operation": "create",
+            "hostName": "example-server-01",
+            "folder": "/",
+            "attributes": {
+              "values": {
+                "ipaddress": "192.168.1.100",
+                "alias": "Example Server 01",
+                "tag_agent": "cmk-agent"
+              }
+            }
+          },
+          "id": "create-host",
+          "name": "Create Host",
+          "type": "n8n-nodes-checkmk.checkmk",
+          "typeVersion": 1,
+          "position": [
+            460,
+            300
+          ],
+          "credentials": {
+            "checkmkApi": {
+              "id": "1",
+              "name": "Checkmk API"
+            }
+          }
+        },
+        {
+          "parameters": {
+            "resource": "host",
+            "operation": "get",
+            "hostName": "={{$node[\"Create Host\"].json[\"id\"]}}"
+          },
+          "id": "get-host",
+          "name": "Get Host",
+          "type": "n8n-nodes-checkmk.checkmk",
+          "typeVersion": 1,
+          "position": [
+            680,
+            300
+          ],
+          "credentials": {
+            "checkmkApi": {
+              "id": "1",
+              "name": "Checkmk API"
+            }
+          }
+        },
+        {
+          "parameters": {
+            "resource": "downtime",
+            "operation": "create",
+            "downtimeType": "host",
+            "hostName": "={{$node[\"Create Host\"].json[\"id\"]}}",
+            "startTime": "={{$now.toISO()}}",
+            "endTime": "={{$now.plus({hours: 2}).toISO()}}",
+            "comment": "Scheduled maintenance for example server"
+          },
+          "id": "create-downtime",
+          "name": "Create Downtime",
+          "type": "n8n-nodes-checkmk.checkmk",
+          "typeVersion": 1,
+          "position": [
+            900,
+            300
+          ],
+          "credentials": {
+            "checkmkApi": {
+              "id": "1",
+              "name": "Checkmk API"
+            }
+          }
+        },
+        {
+          "parameters": {
+            "resource": "service",
+            "operation": "getMany",
+            "hostName": "={{$node[\"Create Host\"].json[\"id\"]}}",
+            "returnAll": true
+          },
+          "id": "get-services",
+          "name": "Get Services",
+          "type": "n8n-nodes-checkmk.checkmk",
+          "typeVersion": 1,
+          "position": [
+            1120,
+            300
+          ],
+          "credentials": {
+            "checkmkApi": {
+              "id": "1",
+              "name": "Checkmk API"
+            }
+          }
+        },
+        {
+          "parameters": {
+            "resource": "problem",
+            "operation": "getMany",
+            "returnAll": false,
+            "limit": 10
+          },
+          "id": "get-problems",
+          "name": "Get Problems",
+          "type": "n8n-nodes-checkmk.checkmk",
+          "typeVersion": 1,
+          "position": [
+            460,
+            500
+          ],
+          "credentials": {
+            "checkmkApi": {
+              "id": "1",
+              "name": "Checkmk API"
+            }
+          }
+        }
+      ],
+      "connections": {
+        "When clicking \"Execute Workflow\"": {
+          "main": [
+            [
+              {
+                "node": "Create Host",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Get Problems",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Create Host": {
+          "main": [
+            [
+              {
+                "node": "Get Host",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Get Host": {
+          "main": [
+            [
+              {
+                "node": "Create Downtime",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Create Downtime": {
+          "main": [
+            [
+              {
+                "node": "Get Services",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      },
+      "pinData": {},
+      "id": "example-workflow"
+    }
+  monitoring-workflow.json: |
+    {
+      "name": "Checkmk Problem Monitoring and Alert",
+      "nodes": [
+        {
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "field": "minutes",
+                  "minutesInterval": 5
+                }
+              ]
+            }
+          },
+          "id": "schedule-trigger",
+          "name": "Every 5 Minutes",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "typeVersion": 1,
+          "position": [
+            240,
+            300
+          ]
+        },
+        {
+          "parameters": {
+            "resource": "problem",
+            "operation": "getMany",
+            "returnAll": true
+          },
+          "id": "get-problems",
+          "name": "Get All Problems",
+          "type": "n8n-nodes-checkmk.checkmk",
+          "typeVersion": 1,
+          "position": [
+            460,
+            300
+          ],
+          "credentials": {
+            "checkmkApi": {
+              "id": "1",
+              "name": "Checkmk API"
+            }
+          }
+        },
+        {
+          "parameters": {
+            "conditions": {
+              "number": [
+                {
+                  "value1": "={{$json[\"extensions\"][\"state\"]}}",
+                  "operation": "equal",
+                  "value2": 2
+                }
+              ]
+            }
+          },
+          "id": "filter-critical",
+          "name": "Filter Critical Problems",
+          "type": "n8n-nodes-base.if",
+          "typeVersion": 1,
+          "position": [
+            680,
+            300
+          ]
+        },
+        {
+          "parameters": {
+            "functionCode": "const problems = $input.all();\nconst criticalProblems = problems.filter(p => p.json.extensions.state === 2);\n\nif (criticalProblems.length === 0) {\n  return [];\n}\n\nconst message = `🚨 Critical Alert: ${criticalProblems.length} critical problems detected!\\n\\n`;\nconst details = criticalProblems.map((p, i) => {\n  return `${i + 1}. Host: ${p.json.extensions.host_name}\\n   Service: ${p.json.extensions.description}\\n   Output: ${p.json.extensions.plugin_output}\\n`;\n}).join('\\n');\n\nreturn [{\n  json: {\n    message: message + details,\n    count: criticalProblems.length,\n    problems: criticalProblems\n  }\n}];"
+          },
+          "id": "format-alert",
+          "name": "Format Alert Message",
+          "type": "n8n-nodes-base.function",
+          "typeVersion": 1,
+          "position": [
+            900,
+            200
+          ]
+        },
+        {
+          "parameters": {
+            "httpMethod": "POST",
+            "path": "webhook-url-here",
+            "options": {}
+          },
+          "id": "send-webhook",
+          "name": "Send to Slack/Discord",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 3,
+          "position": [
+            1120,
+            200
+          ]
+        },
+        {
+          "parameters": {
+            "resource": "service",
+            "operation": "acknowledge",
+            "hostName": "={{$json[\"extensions\"][\"host_name\"]}}",
+            "serviceDescription": "={{$json[\"extensions\"][\"description\"]}}",
+            "comment": "Automatically acknowledged by n8n workflow"
+          },
+          "id": "acknowledge-problem",
+          "name": "Acknowledge Problem",
+          "type": "n8n-nodes-checkmk.checkmk",
+          "typeVersion": 1,
+          "position": [
+            900,
+            400
+          ],
+          "credentials": {
+            "checkmkApi": {
+              "id": "1",
+              "name": "Checkmk API"
+            }
+          }
+        }
+      ],
+      "connections": {
+        "Every 5 Minutes": {
+          "main": [
+            [
+              {
+                "node": "Get All Problems",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Get All Problems": {
+          "main": [
+            [
+              {
+                "node": "Filter Critical Problems",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Filter Critical Problems": {
+          "main": [
+            [
+              {
+                "node": "Format Alert Message",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Acknowledge Problem",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Format Alert Message": {
+          "main": [
+            [
+              {
+                "node": "Send to Slack/Discord",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      },
+      "pinData": {},
+      "id": "monitoring-workflow"
+    }
+  snipeit-to-checkmk-sync.json: |
+    {
+      "id": "snipeit-to-checkmk-sync",
+      "name": "Snipe-IT to Check MK Sync",
+      "nodes": [
+        {
+          "parameters": {
+            "rule": {
+              "interval": [
+                {
+                  "field": "hours",
+                  "hoursInterval": 1
+                }
+              ]
+            }
+          },
+          "id": "schedule-trigger",
+          "name": "Schedule (Every Hour)",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "typeVersion": 1.1,
+          "position": [240, 300]
+        },
+        {
+          "parameters": {
+            "url": "http://localhost:8000/api/v1/hardware",
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth",
+            "options": {}
+          },
+          "id": "get-snipeit-assets",
+          "name": "Get Assets from Snipe-IT",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.1,
+          "position": [460, 300]
+        },
+        {
+          "parameters": {
+            "jsCode": "const assets = $input.item.json.rows || [];\nreturn assets.map(asset => ({\n  json: {\n    hostname: asset.asset_tag || asset.name,\n    ip_address: asset.notes ? asset.notes.match(/\\d+\\.\\d+\\.\\d+\\.\\d+/)?.[0] : null,\n    folder: '~snipe-it',\n    attributes: {\n      alias: asset.name,\n      site: 'iframe'\n    }\n  }\n}));"
+          },
+          "id": "transform-assets",
+          "name": "Transform Asset Data",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [680, 300]
+        },
+        {
+          "parameters": {
+            "url": "https://localhost/iframe/check_mk/api/1.0/domain-types/folder_config/collections/all",
+            "authentication": "predefinedCredentialType",
+            "nodeCredentialType": "httpBasicAuth",
+            "options": {
+              "allowUnauthorizedCerts": true
+            }
+          },
+          "id": "get-folders",
+          "name": "Get Folders from Check MK",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.1,
+          "position": [900, 300]
+        },
+        {
+          "parameters": {
+            "jsCode": "const folders = $input.item.json.value || [];\nconst folderIds = folders.map(f => f.id);\nconst folderExists = folderIds.includes('~snipe-it') || folderIds.some(f => f.endsWith('~snipe-it'));\nreturn [{ json: { folderExists } }];"
+          },
+          "id": "check-folder",
+          "name": "Check If Folder Exists",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [1120, 300]
+        },
+        {
+          "parameters": {
+            "conditions": {
+              "options": {
+                "caseSensitive": true,
+                "leftValue": "",
+                "typeValidation": "strict"
+              },
+              "conditions": [
+                {
+                  "id": "check-folder-exists",
+                  "leftValue": "={{ $json.folderExists }}",
+                  "rightValue": true,
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true"
+                  }
+                }
+              ],
+              "combinator": "and"
+            }
+          },
+          "id": "if-folder-exists",
+          "name": "Folder Exists?",
+          "type": "n8n-nodes-base.if",
+          "typeVersion": 2,
+          "position": [1340, 300]
+        },
+        {
+          "parameters": {
+            "method": "POST",
+            "url": "https://localhost/iframe/check_mk/api/1.0/domain-types/folder_config/collections/all",
+            "authentication": "predefinedCredentialType",
+            "nodeCredentialType": "httpBasicAuth",
+            "sendBody": true,
+            "specifyBody": "json",
+            "jsonBody": "={{ { name: 'snipe-it', title: 'Snipe-IT Imported Hosts', parent: '/' } }}",
+            "options": {
+              "allowUnauthorizedCerts": true
+            }
+          },
+          "id": "create-folder",
+          "name": "Create Folder in Check MK",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.1,
+          "position": [1560, 480]
+        },
+        {
+          "parameters": {
+            "url": "https://localhost/iframe/check_mk/api/1.0/domain-types/host/collections/all",
+            "authentication": "predefinedCredentialType",
+            "nodeCredentialType": "httpBasicAuth",
+            "options": {
+              "allowUnauthorizedCerts": true
+            }
+          },
+          "id": "get-checkmk-hosts",
+          "name": "Get Hosts from Check MK",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.1,
+          "position": [1780, 300]
+        },
+        {
+          "parameters": {
+            "jsCode": "const checkmkResponse = $input.item.json;\nconst checkmkHosts = checkmkResponse.value || [];\nconst checkmkHostnames = checkmkHosts.map(h => h.id);\n\nconst transformNode = $('Transform Asset Data');\nconst snipeitAssets = transformNode.all();\n\nconst newHosts = [];\nfor (const item of snipeitAssets) {\n  const hostname = item.json.hostname;\n  if (hostname && !checkmkHostnames.includes(hostname)) {\n    newHosts.push({ json: { hostname: item.json.hostname, ip_address: item.json.ip_address, folder: item.json.folder, attributes: item.json.attributes } });\n  }\n}\n\nif (newHosts.length === 0) {\n  console.log('No new hosts to add - all Snipe-IT hosts already exist in Check MK');\n  return [];\n}\n\nconsole.log(`Found ${newHosts.length} new hosts to add to Check MK`);\nreturn newHosts;"
+          },
+          "id": "find-missing-hosts",
+          "name": "Find Missing Hosts",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [2000, 300]
+        },
+        {
+          "parameters": {
+            "method": "POST",
+            "url": "https://localhost/iframe/check_mk/api/1.0/domain-types/host_config/collections/all",
+            "authentication": "predefinedCredentialType",
+            "nodeCredentialType": "httpBasicAuth",
+            "sendBody": true,
+            "specifyBody": "json",
+            "jsonBody": "={{ { host_name: $json.hostname, folder: '~snipe-it', attributes: { ipaddress: $json.ip_address, alias: $json.hostname, site: 'iframe' } } }}",
+            "options": {
+              "allowUnauthorizedCerts": true
+            }
+          },
+          "id": "create-host",
+          "name": "Create Host in Check MK",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.1,
+          "position": [2220, 300]
+        },
+        {
+          "parameters": {
+            "method": "POST",
+            "url": "https://localhost/iframe/check_mk/api/1.0/domain-types/activation_run/actions/activate-changes/invoke",
+            "authentication": "predefinedCredentialType",
+            "nodeCredentialType": "httpBasicAuth",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "If-Match",
+                  "value": "*"
+                }
+              ]
+            },
+            "sendBody": true,
+            "specifyBody": "json",
+            "jsonBody": "={{ { sites: ['iframe'], force_foreign_changes: true } }}",
+            "options": {
+              "allowUnauthorizedCerts": true
+            }
+          },
+          "id": "activate-changes",
+          "name": "Activate Changes",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.1,
+          "position": [2440, 300],
+          "onError": "continueRegularOutput"
+        }
+      ],
+      "connections": {
+        "Schedule (Every Hour)": {
+          "main": [
+            [
+              {
+                "node": "Get Assets from Snipe-IT",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Get Assets from Snipe-IT": {
+          "main": [
+            [
+              {
+                "node": "Transform Asset Data",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Transform Asset Data": {
+          "main": [
+            [
+              {
+                "node": "Get Folders from Check MK",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Get Folders from Check MK": {
+          "main": [
+            [
+              {
+                "node": "Check If Folder Exists",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Check If Folder Exists": {
+          "main": [
+            [
+              {
+                "node": "Folder Exists?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Folder Exists?": {
+          "main": [
+            [
+              {
+                "node": "Get Hosts from Check MK",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Create Folder in Check MK",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Create Folder in Check MK": {
+          "main": [
+            [
+              {
+                "node": "Get Hosts from Check MK",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Get Hosts from Check MK": {
+          "main": [
+            [
+              {
+                "node": "Find Missing Hosts",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Find Missing Hosts": {
+          "main": [
+            [
+              {
+                "node": "Create Host in Check MK",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Create Host in Check MK": {
+          "main": [
+            [
+              {
+                "node": "Activate Changes",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    }

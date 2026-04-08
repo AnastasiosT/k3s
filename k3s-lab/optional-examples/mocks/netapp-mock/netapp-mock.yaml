@@ -1,0 +1,92 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: netapp-mock
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: netapp-mock
+  namespace: netapp-mock
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: netapp-mock
+  template:
+    metadata:
+      labels:
+        app: netapp-mock
+    spec:
+      containers:
+        - name: netapp-mock
+          image: 192.168.121.1:5000/netapp-mock:latest
+          ports:
+            - containerPort: 5000
+          env:
+            - name: LOG_LEVEL
+              value: "info"
+            - name: GUNICORN_WORKERS
+              value: "2"
+            - name: GUNICORN_THREADS
+              value: "4"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: netapp-mock
+  namespace: netapp-mock
+spec:
+  selector:
+    app: netapp-mock
+  ports:
+    - port: 80
+      targetPort: 5000
+  type: ClusterIP
+---
+# Middleware — redirect HTTP to HTTPS
+# Referenced in Ingress as: netapp-mock-redirect-to-https@kubernetescrd
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-to-https
+  namespace: netapp-mock
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: netapp-mock
+  namespace: netapp-mock
+  annotations:
+    # web = HTTP (needed to catch and redirect), websecure = HTTPS
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.middlewares: netapp-mock-redirect-to-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - netapp-sim.local
+      secretName: wildcard-local-tls-secret
+  rules:
+    - host: netapp-sim.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: netapp-mock
+                port:
+                  number: 80

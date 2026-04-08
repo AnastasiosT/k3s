@@ -1,0 +1,20 @@
+---
+# Step 2 — Root CA certificate (self-signed, 10 year validity)
+# Import root-ca-secret's tls.crt into browser/OS to trust all certs in this chain
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: root-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: "Thanos K3s Mockup CA"
+  secretName: root-ca-secret
+  duration: 87600h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer

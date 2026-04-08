@@ -1,0 +1,12 @@
+---
+# TLSStore — sets the wildcard cert as Traefik's default certificate
+# This ensures Traefik sends the full cert chain (leaf + intermediate)
+# The wildcard-local-tls-secret must also exist in kube-system (synced by reflector)
+apiVersion: traefik.io/v1alpha1
+kind: TLSStore
+metadata:
+  name: default
+  namespace: kube-system
+spec:
+  defaultCertificate:
+    secretName: wildcard-local-tls-secret

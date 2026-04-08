@@ -1,0 +1,188 @@
+---
+# ConfigMap: Environment variables and LDAP configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openldap-config
+  namespace: ldap
+data:
+  DOMAIN: "cmk.dev.de"
+  BASE_DN: "dc=cmk,dc=dev,dc=de"
+  ORGANIZATION: "Checkmk"
+  LOG_LEVEL: "256"
+  ENABLE_TLS: "FALSE"
+
+---
+# ConfigMap: LDIF initialization data
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ldap-init-data
+  namespace: ldap
+data:
+  org.ldif: |
+    # Site_A
+    dn: ou=Site_A,dc=cmk,dc=dev,dc=de
+    objectClass: organizationalUnit
+    objectClass: top
+    ou: Site_A
+
+    dn: cn=groups,ou=Site_A,dc=cmk,dc=dev,dc=de
+    objectClass: posixGroup
+    objectClass: top
+    cn: groups
+    gidNumber: 500
+
+    dn: cn=cmk-admins,cn=groups,ou=Site_A,dc=cmk,dc=dev,dc=de
+    objectClass: posixGroup
+    objectClass: top
+    cn: cmk-admins
+    gidNumber: 502
+    memberUid: ldap.site1.admin
+
+    dn: cn=cmk-guest,cn=groups,ou=Site_A,dc=cmk,dc=dev,dc=de
+    objectClass: posixGroup
+    objectClass: top
+    cn: cmk-guest
+    gidNumber: 503
+    memberUid: ldap.site1.guest
+
+    dn: cn=cmk-normal,cn=groups,ou=Site_A,dc=cmk,dc=dev,dc=de
+    objectClass: posixGroup
+    objectClass: top
+    cn: cmk-normal
+    gidNumber: 504
+    memberUid: ldap.site1.normal
+
+    dn: cn=users,ou=Site_A,dc=cmk,dc=dev,dc=de
+    objectClass: posixGroup
+    objectClass: top
+    cn: users
+    gidNumber: 501
+
+    dn: cn=ldap.site1.admin,cn=users,ou=Site_A,dc=cmk,dc=dev,dc=de
+    objectClass: inetOrgPerson
+    objectClass: posixAccount
+    objectClass: top
+    cn: ldap.site1.admin
+    displayName: ldap.site1.admin
+    mail: cmk-admin@locahost.de
+    sn: Thomaidis
+    uid: ldap.site1.admin
+    uidNumber: 1001
+    gidNumber: 502
+    homeDirectory: /home/ldap.site1.admin
+    userPassword: cmk
+
+    dn: cn=ldap.site1.guest,cn=users,ou=Site_A,dc=cmk,dc=dev,dc=de
+    objectClass: inetOrgPerson
+    objectClass: posixAccount
+    objectClass: top
+    cn: ldap.site1.guest
+    displayName: ldap.site1.guest
+    givenName: Anastasios
+    mail: cmk-guest@locahost.de
+    sn: Thomaidis
+    uid: ldap.site1.guest
+    uidNumber: 1002
+    gidNumber: 503
+    homeDirectory: /home/ldap.site1.guest
+    userPassword: cmk
+
+    dn: cn=ldap.site1.normal,cn=users,ou=Site_A,dc=cmk,dc=dev,dc=de
+    objectClass: inetOrgPerson
+    objectClass: posixAccount
+    objectClass: top
+    cn: ldap.site1.normal
+    displayName: ldap.site1.normal
+    mail: cmk-normal@locahost.de
+    sn: Thomaidis
+    uid: ldap.site1.normal
+    uidNumber: 1003
+    gidNumber: 504
+    homeDirectory: /home/ldap.site1.normal
+    userPassword: cmk
+
+    # Site_B
+    dn: ou=Site_B,dc=cmk,dc=dev,dc=de
+    objectClass: organizationalUnit
+    objectClass: top
+    ou: Site_B
+
+    dn: cn=groups,ou=Site_B,dc=cmk,dc=dev,dc=de
+    objectClass: posixGroup
+    objectClass: top
+    cn: groups
+    gidNumber: 500
+
+    dn: cn=ldap-admins,cn=groups,ou=Site_B,dc=cmk,dc=dev,dc=de
+    objectClass: posixGroup
+    objectClass: top
+    cn: ldap-admins
+    gidNumber: 602
+    memberUid: ldap.site2.admin
+
+    dn: cn=ldap-guest,cn=groups,ou=Site_B,dc=cmk,dc=dev,dc=de
+    objectClass: posixGroup
+    objectClass: top
+    cn: ldap-guest
+    gidNumber: 603
+    memberUid: ldap.site2.guest
+
+    dn: cn=ldap-normal,cn=groups,ou=Site_B,dc=cmk,dc=dev,dc=de
+    objectClass: posixGroup
+    objectClass: top
+    cn: ldap-normal
+    gidNumber: 604
+    memberUid: ldap.site2.normal
+
+    dn: cn=users,ou=Site_B,dc=cmk,dc=dev,dc=de
+    objectClass: posixGroup
+    objectClass: top
+    cn: users
+    gidNumber: 601
+
+    dn: cn=ldap.site2.admin,cn=users,ou=Site_B,dc=cmk,dc=dev,dc=de
+    objectClass: inetOrgPerson
+    objectClass: posixAccount
+    objectClass: top
+    cn: ldap.site2.admin
+    displayName: ldap.site2.admin
+    givenName: Anastasios
+    mail: ldap-admin@locahost.de
+    sn: Thomaidis
+    uid: ldap.site2.admin
+    uidNumber: 1004
+    gidNumber: 602
+    homeDirectory: /home/ldap.site2.admin
+    userPassword: cmk
+
+    dn: cn=ldap.site2.guest,cn=users,ou=Site_B,dc=cmk,dc=dev,dc=de
+    objectClass: inetOrgPerson
+    objectClass: posixAccount
+    objectClass: top
+    cn: ldap.site2.guest
+    displayName: ldap.site2.guest
+    givenName: Anastasios
+    mail: ldap-guest@locahost.de
+    sn: Thomaidis
+    uid: ldap.site2.guest
+    uidNumber: 1005
+    gidNumber: 603
+    homeDirectory: /home/ldap.site2.guest
+    userPassword: cmk
+
+    dn: cn=ldap.site2.normal,cn=users,ou=Site_B,dc=cmk,dc=dev,dc=de
+    objectClass: inetOrgPerson
+    objectClass: posixAccount
+    objectClass: top
+    cn: ldap.site2.normal
+    displayName: ldap.site2.normal
+    givenName: Anastasios
+    mail: ldap-normal@locahost.de
+    sn: Thomaidis
+    uid: ldap.site2.normal
+    uidNumber: 1006
+    gidNumber: 604
+    homeDirectory: /home/ldap.site2.normal
+    userPassword: cmk

@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: auto-reset-stock
+  namespace: web-shop
+spec:
+  schedule: "*/5 * * * *"
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          serviceAccountName: default
+          containers:
+          - name: reset
+            image: postgres:16-alpine
+            env:
+            - name: PGPASSWORD
+              value: "postgres123"
+            command:
+            - /bin/sh
+            - -c
+            - |
+              psql -h postgres.postgres.svc.cluster.local -U postgres -d shop << 'EOSQL'
+              UPDATE products SET stock_qty = 20;
+              SELECT COUNT(*) as products_reset FROM products WHERE stock_qty = 20;
+              EOSQL
+          restartPolicy: Never

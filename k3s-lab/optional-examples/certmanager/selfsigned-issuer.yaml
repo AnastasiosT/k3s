@@ -1,0 +1,8 @@
+---
+# Step 1 — Self-signed issuer (bootstraps the root CA)
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}

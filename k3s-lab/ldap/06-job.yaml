@@ -1,0 +1,64 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ldap-init
+  namespace: ldap
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      serviceAccountName: default
+      restartPolicy: Never
+      containers:
+      - name: ldap-init
+        image: nfrastack/openldap:latest
+        env:
+        - name: LDAP_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openldap-credentials
+              key: LDAP_ADMIN_PASSWORD
+        volumeMounts:
+        - name: ldif-data
+          mountPath: /ldif
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Waiting for OpenLDAP to be healthy..."
+          for i in $(seq 1 30); do
+            if ldapsearch -x -H ldap://openldap.ldap.svc.cluster.local:389 \
+              -D "cn=admin,dc=cmk,dc=dev,dc=de" \
+              -w "$LDAP_ADMIN_PASSWORD" \
+              -b "dc=cmk,dc=dev,dc=de" \
+              -s base 2>/dev/null; then
+              echo "OpenLDAP is healthy"
+              break
+            fi
+            echo "Attempt $i/30: Waiting for OpenLDAP..."
+            sleep 2
+          done
+
+          echo "Checking if already initialized..."
+          COUNT=$(ldapsearch -x -H ldap://openldap.ldap.svc.cluster.local:389 \
+            -D "cn=admin,dc=cmk,dc=dev,dc=de" \
+            -w "$LDAP_ADMIN_PASSWORD" \
+            -b "dc=cmk,dc=dev,dc=de" \
+            "(objectClass=organizationalUnit)" dn 2>/dev/null | grep -c "^dn:" || true)
+
+          if [ "$COUNT" -gt "0" ]; then
+            echo "LDAP already initialized. Skipping."
+            exit 0
+          fi
+
+          echo "Initializing LDAP with org.ldif..."
+          ldapadd -x -H ldap://openldap.ldap.svc.cluster.local:389 \
+            -D "cn=admin,dc=cmk,dc=dev,dc=de" \
+            -w "$LDAP_ADMIN_PASSWORD" \
+            -f /ldif/org.ldif
+          echo "LDAP initialization complete"
+      volumes:
+      - name: ldif-data
+        configMap:
+          name: ldap-init-data

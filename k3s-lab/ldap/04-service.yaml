@@ -1,0 +1,40 @@
+---
+# Service for OpenLDAP
+apiVersion: v1
+kind: Service
+metadata:
+  name: openldap
+  namespace: ldap
+  labels:
+    app: openldap
+spec:
+  type: NodePort
+  ports:
+    - name: ldap
+      port: 389
+      targetPort: 389
+      nodePort: 30389
+    - name: ldaps
+      port: 636
+      targetPort: 636
+      nodePort: 30636
+  selector:
+    app: openldap
+
+---
+# Service for LAM (web UI)
+apiVersion: v1
+kind: Service
+metadata:
+  name: lam
+  namespace: ldap
+  labels:
+    app: lam
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+  selector:
+    app: lam

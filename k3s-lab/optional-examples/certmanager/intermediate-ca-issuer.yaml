@@ -1,0 +1,9 @@
+---
+# Step 5 — Intermediate CA issuer (issues all end-entity certs e.g. wildcard)
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: intermediate-ca-issuer
+spec:
+  ca:
+    secretName: intermediate-ca-secret

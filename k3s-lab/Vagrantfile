@@ -1,0 +1,48 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "bento/ubuntu-24.04"
+  config.vm.hostname = "checkmk-k3s"
+
+  vm_ip = ENV.fetch("VM_IP", "192.168.121.90")
+  bridge_nic_libvirt = ENV.fetch("BRIDGE_NIC", "virbr0")
+
+  config.vm.provider "libvirt" do |lv, override|
+    lv.memory = 8192
+    lv.cpus = 3
+    lv.driver = "kvm"
+    lv.machine_virtual_size = 100
+    override.vm.network "private_network", dev: bridge_nic_libvirt, mode: "bridge", type: "bridge", ip: vm_ip
+  end
+  
+  # Provision k3s + Checkmk agent (one-time)
+  # Everything else is deployed via Make targets from the host
+  config.vm.provision "shell",
+    path: "scripts/provision.sh",
+    env: {
+      "VM_IP"            => vm_ip,
+      "RELEASE_NAME"     => "myrelease",
+      "RELEASE_NS"       => "checkmk-monitoring",
+      "NODEPORT"         => "30035",
+      "CHART_REPO"       => "https://checkmk.github.io/checkmk_kube_agent",
+      "CHART_NAME"       => "checkmk-chart/checkmk",
+      "K3S_CHANNEL"      => "v1.33"
+    }
+
+  # Post-provisioning message
+  config.vm.provision "shell", inline: <<-SHELL
+    echo ""
+    echo "════════════════════════════════════════════════════════════════"
+    echo "✓ k3s VM is ready!"
+    echo "════════════════════════════════════════════════════════════════"
+    echo ""
+    echo "kubeconfig is ready! On your host machine:"
+    echo "  export KUBECONFIG=~/.kube/config-k3s"
+    echo "  kubectl get nodes"
+    echo ""
+    echo "Deploy infrastructure:"
+    echo "  make all       # Deploy core (TLS, OTel)"
+    echo "  make postgres  # Deploy PostgreSQL (optional)"
+    echo "  make mocks     # Deploy mocks (optional)"
+    echo ""
+    echo "════════════════════════════════════════════════════════════════"
+  SHELL
+end

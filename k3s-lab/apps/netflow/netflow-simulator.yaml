@@ -1,0 +1,32 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: netflow-python-simulator
+  namespace: netflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: netflow-simulator
+  template:
+    metadata:
+      labels:
+        app: netflow-simulator
+    spec:
+      containers:
+        - name: simulator
+          image: 192.168.121.1:5000/netflow-simulator:latest
+          imagePullPolicy: Always
+          env:
+          - name: COLLECTOR
+            value: "netflow-collector.otel-collectors.svc.cluster.local"
+          - name: NETFLOW_PORT
+            value: "2055"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "100m"

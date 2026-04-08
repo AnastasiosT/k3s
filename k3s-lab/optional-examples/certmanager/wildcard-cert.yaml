@@ -1,0 +1,22 @@
+---
+# Wildcard TLS certificate issued by cert-manager
+# Covers *.local, *.k3s.local, *.sim.local, *.thanos
+# Issued by the intermediate CA (intermediate-ca-issuer)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard-local
+  namespace: cert-manager
+spec:
+  secretName: wildcard-local-tls-secret
+  commonName: "*.k3s.local"
+  duration: 8760h
+  renewBefore: 720h
+  dnsNames:
+    - "*.local"
+    - "*.k3s.local"
+    - "*.sim.local"
+    - "*.thanos"
+  issuerRef:
+    name: intermediate-ca-issuer
+    kind: ClusterIssuer

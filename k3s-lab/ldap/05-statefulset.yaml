@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: openldap
+  namespace: ldap
+spec:
+  serviceName: openldap
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openldap
+  template:
+    metadata:
+      labels:
+        app: openldap
+    spec:
+      containers:
+      - name: openldap
+        image: nfrastack/openldap:latest
+        ports:
+        - name: ldap
+          containerPort: 389
+        - name: ldaps
+          containerPort: 636
+        env:
+        - name: DOMAIN
+          valueFrom:
+            configMapKeyRef:
+              name: openldap-config
+              key: DOMAIN
+        - name: BASE_DN
+          valueFrom:
+            configMapKeyRef:
+              name: openldap-config
+              key: BASE_DN
+        - name: ORGANIZATION
+          valueFrom:
+            configMapKeyRef:
+              name: openldap-config
+              key: ORGANIZATION
+        - name: ADMIN_PASS
+          valueFrom:
+            secretKeyRef:
+              name: openldap-credentials
+              key: LDAP_ADMIN_PASSWORD
+        - name: CONFIG_PASS
+          valueFrom:
+            secretKeyRef:
+              name: openldap-credentials
+              key: LDAP_CONFIG_PASSWORD
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: openldap-config
+              key: LOG_LEVEL
+        - name: ENABLE_TLS
+          valueFrom:
+            configMapKeyRef:
+              name: openldap-config
+              key: ENABLE_TLS
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        livenessProbe:
+          exec:
+            command:
+            - ldapsearch
+            - -x
+            - -H
+            - ldap://localhost:389
+            - -D
+            - cn=admin,dc=cmk,dc=dev,dc=de
+            - -w
+            - ldapadmin
+            - -b
+            - dc=cmk,dc=dev,dc=de
+            - -s
+            - base
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - ldapsearch
+            - -x
+            - -H
+            - ldap://localhost:389
+            - -D
+            - cn=admin,dc=cmk,dc=dev,dc=de
+            - -w
+            - ldapadmin
+            - -b
+            - dc=cmk,dc=dev,dc=de
+            - -s
+            - base
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 5Gi

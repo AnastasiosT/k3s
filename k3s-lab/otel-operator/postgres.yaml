@@ -1,0 +1,168 @@
+---
+# PostgreSQL Metrics Collector - comprehensive database monitoring
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: postgres
+  namespace: otel-collectors
+spec:
+  mode: deployment
+  replicas: 1
+  image: otel/opentelemetry-collector-contrib:0.147.0
+
+  resources:
+    limits:
+      memory: 256Mi
+      cpu: 300m
+    requests:
+      memory: 128Mi
+      cpu: 100m
+
+  config:
+    receivers:
+      postgresql:
+        endpoint: "postgres.postgres.svc.cluster.local:5432"
+        transport: tcp
+        username: postgres
+        password: postgres123
+        databases:
+          - shop
+          - postgres
+        collection_interval: 30s
+        tls:
+          insecure: true
+        metrics:
+          postgresql.bgwriter.buffers.allocated:
+            enabled: true
+          postgresql.bgwriter.buffers.writes:
+            enabled: true
+          postgresql.bgwriter.checkpoint.count:
+            enabled: true
+          postgresql.bgwriter.duration:
+            enabled: true
+          postgresql.bgwriter.maxwritten:
+            enabled: true
+          postgresql.blocks_read:
+            enabled: true
+          postgresql.commits:
+            enabled: true
+          postgresql.connection.max:
+            enabled: true
+          postgresql.database.count:
+            enabled: true
+          postgresql.database.locks:
+            enabled: true
+          postgresql.deadlocks:
+            enabled: true
+          postgresql.index.scans:
+            enabled: true
+          postgresql.index.size:
+            enabled: true
+          postgresql.operations:
+            enabled: true
+          postgresql.rollbacks:
+            enabled: true
+          postgresql.rows:
+            enabled: true
+          postgresql.table.count:
+            enabled: true
+          postgresql.table.size:
+            enabled: true
+          postgresql.table.vacuum.count:
+            enabled: true
+          postgresql.temp_files:
+            enabled: true
+          postgresql.wal.age:
+            enabled: true
+
+      # SQL query performance via pg_stat_statements (top 20 queries)
+      sqlquery/pg_stat_statements:
+        driver: postgres
+        datasource: "postgresql://postgres:postgres123@postgres.postgres.svc.cluster.local:5432/shop?sslmode=disable"
+        collection_interval: 60s
+        queries:
+          - sql: |
+              SELECT
+                LEFT(query, 100)              AS query_text,
+                calls::bigint                 AS calls,
+                round(total_exec_time::numeric, 2)  AS total_exec_time_ms,
+                round(mean_exec_time::numeric, 2)   AS mean_exec_time_ms,
+                round(max_exec_time::numeric, 2)    AS max_exec_time_ms,
+                rows::bigint                  AS rows
+              FROM pg_stat_statements
+              WHERE query NOT LIKE '%pg_stat_statements%'
+              ORDER BY total_exec_time DESC
+              LIMIT 20
+            metrics:
+              - metric_name: db.query.calls
+                value_column: calls
+                attribute_columns: [query_text]
+                value_type: int
+              - metric_name: db.query.total_exec_time_ms
+                value_column: total_exec_time_ms
+                attribute_columns: [query_text]
+                value_type: double
+              - metric_name: db.query.mean_exec_time_ms
+                value_column: mean_exec_time_ms
+                attribute_columns: [query_text]
+                value_type: double
+              - metric_name: db.query.max_exec_time_ms
+                value_column: max_exec_time_ms
+                attribute_columns: [query_text]
+                value_type: double
+
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+    processors:
+      memory_limiter:
+        check_interval: 5s
+        limit_mib: 200
+        spike_limit_mib: 50
+
+      batch:
+        timeout: 10s
+        send_batch_size: 500
+        send_batch_max_size: 1000
+
+      transform:
+        metric_statements:
+          - context: resource
+            statements:
+              - set(attributes["host.name"], "postgresql_k3s")
+
+      resource:
+        attributes:
+          - key: service.name
+            value: postgresql
+            action: insert
+          - key: db.system
+            value: postgresql
+            action: insert
+          - key: cluster.name
+            value: k3s
+            action: insert
+
+    exporters:
+      otlp:
+        endpoint: "gateway-collector.otel-collectors.svc.cluster.local:4317"
+        tls:
+          insecure: true
+        timeout: 30s
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
+
+    service:
+      extensions: [health_check]
+      telemetry:
+        logs:
+          level: warn
+      pipelines:
+        metrics:
+          receivers: [postgresql, sqlquery/pg_stat_statements]
+          processors: [memory_limiter, transform, resource, batch]
+          exporters: [otlp]

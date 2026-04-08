@@ -1,0 +1,145 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: checkmk
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: checkmk-credentials
+  namespace: checkmk
+type: Opaque
+stringData:
+  password: cmk
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: checkmk-hostpath-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /mnt/checkmk-data
+  storageClassName: manual
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: checkmk-data
+  namespace: checkmk
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkmk
+  namespace: checkmk
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: checkmk
+  template:
+    metadata:
+      labels:
+        app: checkmk
+    spec:
+      containers:
+        - name: checkmk
+          image: checkmk/check-mk-ultimatemt:2.5.0b1
+          ports:
+            - containerPort: 5000
+            - containerPort: 8000
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          env:
+            - name: CMK_SITE_ID
+              value: "v250"
+            - name: CMK_LIVESTATUS_TCP
+              value: "on"
+            - name: CMK_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: checkmk-credentials
+                  key: password
+          volumeMounts:
+            - name: checkmk-data
+              mountPath: /omd/sites
+            - name: localtime
+              mountPath: /etc/localtime
+              readOnly: true
+            - name: tmp
+              mountPath: /opt/omd/sites/v250/tmp
+      volumes:
+        - name: checkmk-data
+          persistentVolumeClaim:
+            claimName: checkmk-data
+        - name: localtime
+          hostPath:
+            path: /etc/localtime
+        - name: tmp
+          emptyDir:
+            medium: Memory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkmk
+  namespace: checkmk
+spec:
+  selector:
+    app: checkmk
+  ports:
+    - name: http
+      port: 80
+      targetPort: 5000
+    - name: livestatus
+      port: 8000
+      targetPort: 8000
+    - name: otlp
+      port: 4317
+      targetPort: 4317
+  type: ClusterIP
+---
+# Middleware — redirect HTTP to HTTPS
+# Referenced in Ingress as: checkmk-redirect-to-https@kubernetescrd
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mattermost
+  namespace: mattermost
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.middlewares: mattermost-redirect-to-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - mattermost.local
+      secretName: wildcard-local-tls-secret
+  rules:
+    - host: mattermost.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mattermost
+                port:
+                  number: 8065

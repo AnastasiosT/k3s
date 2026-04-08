@@ -1,0 +1,118 @@
+---
+# Logs Collector - Kubernetes pod logs + syslog via filelog
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: logs
+  namespace: otel-collectors
+spec:
+  mode: daemonset
+  image: otel/opentelemetry-collector-contrib:0.147.0
+
+  resources:
+    limits:
+      memory: 1Gi
+      cpu: 500m
+    requests:
+      memory: 512Mi
+      cpu: 250m
+
+  # Mount host paths for log collection
+  volumeMounts:
+    - name: pod-logs
+      mountPath: /var/log/pods
+      readOnly: true
+    - name: host-logs
+      mountPath: /var/log
+      readOnly: true
+
+  volumes:
+    - name: pod-logs
+      hostPath:
+        path: /var/log/pods
+        type: DirectoryOrCreate
+    - name: host-logs
+      hostPath:
+        path: /var/log
+        type: DirectoryOrCreate
+
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+      # Kubernetes pod container logs
+      filelog:
+        include:
+          - /var/log/pods/*/*/*.log
+        exclude:
+          - /var/log/pods/kube-system_*
+          - /var/log/pods/opentelemetry-operator-system_*
+        start_at: end
+        include_file_path: true
+
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+    processors:
+      memory_limiter:
+        check_interval: 5s
+        limit_mib: 512
+        spike_limit_mib: 128
+
+      batch:
+        timeout: 5s
+        send_batch_size: 2000
+        send_batch_max_size: 5000
+
+      resource:
+        attributes:
+          - key: service.name
+            value: k8s-logs-collector
+            action: insert
+          - key: cluster.name
+            value: k3s
+            action: insert
+
+    exporters:
+      otlp_grpc:
+        endpoint: "gateway-collector.otel-collectors.svc.cluster.local:4317"
+        tls:
+          insecure: true
+        timeout: 30s
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
+        sending_queue:
+          enabled: true
+          num_consumers: 10
+          queue_size: 5000
+        compression: gzip
+
+    service:
+      extensions: [health_check]
+      telemetry:
+        logs:
+          level: warn
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, batch]
+          exporters: [otlp_grpc]
+
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, batch]
+          exporters: [otlp_grpc]
+
+        logs:
+          receivers: [otlp, filelog]
+          processors: [memory_limiter, resource, batch]
+          exporters: [otlp_grpc]
